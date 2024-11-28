@@ -49,7 +49,7 @@ def play_round():
 
     data = request.json
     player_reaction_time = data.get('reaction_time', float('inf'))  # Default to inf if not provided
-    bob_reaction_time = 500  # Bob's constant reaction time in milliseconds
+    bob_reaction_time = max(0, np.random.normal(250, 60))  # Ensures Bob's reaction time is not negative
 
     # Increment the round count
     game_state['game_round'] += 1
