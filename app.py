@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, render_template, session
 import pandas as pd
 import joblib
 import uuid
+import numpy as np  # Add this line to import numpy
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Replace with a secure random key
