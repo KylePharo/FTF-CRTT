@@ -7,6 +7,7 @@ from pydub import AudioSegment
 from pydub.playback import play
 from datetime import datetime
 import csv
+import threading
 
 ### Experiment Configuration ###################################################
 # Customise variables and text messages here, for ease of use.
@@ -515,44 +516,19 @@ def set_blast():
 def activate_blast(blast_level):
     global game_data, game_round, win_num, player_names, time_to_button_press, time_to_blast_initiate, time_to_round_start
 
+    blast_files_l = {
+        "1": blast_file_l1, "2": blast_file_l2, "3": blast_file_l3, "4": blast_file_l4,
+        "5": blast_file_l5, "6": blast_file_l6, "7": blast_file_l7, "8": blast_file_l8
+    }
+    blast_files_r = {
+        "1": blast_file_r1, "2": blast_file_r2, "3": blast_file_r3, "4": blast_file_r4,
+        "5": blast_file_r5, "6": blast_file_r6, "7": blast_file_r7, "8": blast_file_r8
+    }
+
     if win_num == 1:
-        if blast_level == "1":
-            play(blast_file_l1)
-        elif blast_level == "2":
-            play(blast_file_l2)
-        elif blast_level == "3":
-            play(blast_file_l3)
-        elif blast_level == "4":
-            play(blast_file_l4)
-        elif blast_level == "5":
-            play(blast_file_l5)
-        elif blast_level == "6":
-            play(blast_file_l6)
-        elif blast_level == "7":
-            play(blast_file_l7)
-        elif blast_level == "8":
-            play(blast_file_l8)
-        else:
-            play(blast_file_l4)
+        audio = blast_files_l.get(blast_level, blast_file_l4)
     else:
-        if blast_level == "1":
-            play(blast_file_r1)
-        elif blast_level == "2":
-            play(blast_file_r2)
-        elif blast_level == "3":
-            play(blast_file_r3)
-        elif blast_level == "4":
-            play(blast_file_r4)
-        elif blast_level == "5":
-            play(blast_file_r5)
-        elif blast_level == "6":
-            play(blast_file_r6)
-        elif blast_level == "7":
-            play(blast_file_r7)
-        elif blast_level == "8":
-            play(blast_file_r8)
-        else:
-            play(blast_file_r4)
+        audio = blast_files_r.get(blast_level, blast_file_r4)
 
     save_files.append([win_num, blast_level, time_to_round_start, time_to_button_press, time_to_blast_initiate])
 
@@ -566,7 +542,11 @@ def activate_blast(blast_level):
 
     game_data[game_round]["blast_level"] = blast_level
 
-    root.after(400, check_game())
+    def play_then_continue():
+        play(audio)
+        root.after(0, check_game)
+
+    threading.Thread(target=play_then_continue, daemon=True).start()
 
 
 # Print end text and unbind KeyPress.
