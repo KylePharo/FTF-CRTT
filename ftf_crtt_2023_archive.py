@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import *
+from tkinter import ttk
 import random
 import datetime
 import time
@@ -7,36 +8,43 @@ from pydub import AudioSegment
 from pydub.playback import play
 from datetime import datetime
 import csv
+import os
 import threading
 
 ### Experiment Configuration ###################################################
 # Customise variables and text messages here, for ease of use.
 ################################################################################
 # Number of rounds to play
-NUM_ROUNDS = 30
+# NUM_ROUNDS = 30
+NUM_ROUNDS = 4
 
 # Maximum number of seconds to wait during game (s)
+# MAX_WAIT = 8
 MAX_WAIT = 8
 
 # Minimum number of seconds to wait during game (s)
 MIN_WAIT = 0
+MIN_WAIT = 0
 
 # Set time difference to override random win (ms)
 ELAPSED_TIME = 100
+
+# Set the timeout for second player response (s)
+RESPONSE_TIMEOUT = 3
 
 # Set the keys for each player
 KEY1 = "1"
 KEY2 = "2"
 
 # Window Dimensions
-WINDOW_WIDTH = 2000
-WINDOW_HEIGHT = 1000
+WINDOW_WIDTH = 1920
+WINDOW_HEIGHT = 1080
 
 # Set font details
-FONT_TYPE = "Times New Roman"
-FONT_SIZE = 40
+FONT_TYPE = "Helvetica"
+FONT_SIZE = 50
 FONT_COLOUR = "white"
-GO_COLOUR = "red"
+GO_COLOUR = "orange"
 BG_COLOUR = "black"
 
 # Provide pathname for audio file
@@ -142,6 +150,8 @@ time_to_button_press = 0
 time_to_blast_initiate = 0
 FORCED_BREAK_TIME = 0
 TIMEOUT_COUNTER = 0
+_timeout_id = None
+first_presser = None
 
 display_text = tk.StringVar()
 display_label = tk.Label(
@@ -166,8 +176,7 @@ entry_label = tk.Entry(
     state="disabled"
 )
 
-display_label.grid(row=1, column=1)
-entry_label.grid(row=2, column=1)
+# Game display widgets are hidden until the settings screen is dismissed
 
 root.grid_rowconfigure(0, weight=1)
 root.grid_rowconfigure(3, weight=1)
@@ -202,6 +211,18 @@ def bind_space(func):
     root.bind("<space>", func)
 
 
+def flash_go():
+    root.configure(bg=GO_COLOUR)
+    display_label.configure(bg=GO_COLOUR)
+    entry_label.configure(bg=GO_COLOUR, disabledbackground=GO_COLOUR)
+
+
+def revert_flash():
+    root.configure(bg=BG_COLOUR)
+    display_label.configure(bg=BG_COLOUR)
+    entry_label.configure(bg=BG_COLOUR, disabledbackground=BG_COLOUR)
+
+
 def unbind_all():
     root.unbind("<Return>")
     root.unbind("<space>")
@@ -234,36 +255,33 @@ condition_options = [
     "15 Seconds"
 ]
 
-game_options = [
-    "First Game",
-    "Second Game"
-]
-
 
 ### Stage Functions ############################################################
 # These control the flow of the experiment
 ################################################################################
 def update_settings():
-    global FORCED_BREAK_TIME
-    # get the shit off the screen
-    condition_drop.grid_forget()
-    game_drop.grid_forget()
-    button.grid_forget()
+    global FORCED_BREAK_TIME, NUM_ROUNDS, MAX_WAIT, MIN_WAIT, RESPONSE_TIMEOUT
+    settings_frame.grid_forget()
+    display_label.grid(row=1, column=1)
+    entry_label.grid(row=2, column=1)
+
+    NUM_ROUNDS = num_rounds_var.get()
+    MAX_WAIT = max_wait_var.get()
+    MIN_WAIT = min_wait_var.get()
+    RESPONSE_TIMEOUT = timeout_var.get()
+
     print("Condition: {}".format(condition.get()))
-    print("Game: {}".format(game.get()))
-    # Set the forced-break length (s)
+
     if condition.get() == "No Break":
         FORCED_BREAK_TIME = 0
     elif condition.get() == "5 Seconds":
         FORCED_BREAK_TIME = 5
-        print("true")
     elif condition.get() == "10 Seconds":
         FORCED_BREAK_TIME = 10
     elif condition.get() == "15 Seconds":
         FORCED_BREAK_TIME = 15
     else:
         FORCED_BREAK_TIME = 0
-
 
     start_game()
 
@@ -350,10 +368,11 @@ def start_round(e):
     root.after(random_delay, start_timer)
 
 
-# Print GO text, and record pressed keys
+# Flash screen orange and record pressed keys
 def start_timer():
     global time_to_button_press
-    update_text(text_go)
+    update_text("")
+    flash_go()
     end_ttbp = time.time()
     time_to_button_press = end_ttbp - begin
     print("ttbp", time_to_button_press)
@@ -363,16 +382,19 @@ def start_timer():
 # Check keypresses to see if one of them was a player.
 # If yes, initiate the next stage.
 def record_game(e):
-    global KEY1, KEY2, game_data, game_round, win_num, t1
+    global KEY1, KEY2, game_data, game_round, win_num, t1, first_presser, _timeout_id
 
     if e.keysym not in (KEY1, KEY2):
         return
-    elif e.keysym == KEY1:
+
+    if e.keysym == KEY1:
+        first_presser = 1
         now = datetime.now()
         t1 = int(now.strftime("%H%M%S%f")[:-3])
         print(t1)
         print("t1")
     elif e.keysym == KEY2:
+        first_presser = 2
         now = datetime.now()
         t1 = int(now.strftime("%H%M%S%f")[:-3])
         print(t1)
@@ -389,13 +411,36 @@ def record_game(e):
         bind_keypress(time_check_fb)
         print("time checking control")
 
+    _timeout_id = root.after(RESPONSE_TIMEOUT * 1000, handle_timeout)
+
+
+def handle_timeout():
+    global win_num, _timeout_id
+    _timeout_id = None
+    revert_flash()
+    unbind_all()
+    win_num = first_presser
+    if FORCED_BREAK_TIME == 0:
+        root.after(10, ask_blast)
+    else:
+        update_text(text_win_wait.format(
+            player_names[win_num], player_names[win_num],
+            FORCED_BREAK_TIME, player_names[3 - win_num]))
+        root.after(100, forced_break)
+
 
 def time_check_fb(b):
-    global KEY1, KEY2, game_data, game_round, win_num
+    global KEY1, KEY2, game_data, game_round, win_num, _timeout_id
 
     if b.keysym not in (KEY1, KEY2):
         return
-    elif b.keysym == KEY1:
+
+    if _timeout_id is not None:
+        root.after_cancel(_timeout_id)
+        _timeout_id = None
+    revert_flash()
+
+    if b.keysym == KEY1:
         now = datetime.now()
         t2 = int(now.strftime("%H%M%S%f")[:-3])
         print(t2)
@@ -436,11 +481,17 @@ def time_check_fb(b):
 
 
 def time_check(b):
-    global KEY1, KEY2, game_data, game_round, win_num
+    global KEY1, KEY2, game_data, game_round, win_num, _timeout_id
 
     if b.keysym not in (KEY1, KEY2):
         return
-    elif b.keysym == KEY1:
+
+    if _timeout_id is not None:
+        root.after_cancel(_timeout_id)
+        _timeout_id = None
+    revert_flash()
+
+    if b.keysym == KEY1:
         now = datetime.now()
         t2 = int(now.strftime("%H%M%S%f")[:-3])
         print(t2)
@@ -549,11 +600,24 @@ def activate_blast(blast_level):
     threading.Thread(target=play_then_continue, daemon=True).start()
 
 
+def restart_game(*_):
+    global game_round, game_data, save_files, player_names
+    game_round = 0
+    game_data = {}
+    save_files = []
+    player_names = {}
+    unbind_all()
+    display_label.grid_remove()
+    entry_label.grid_remove()
+    settings_frame.grid(row=1, column=1, rowspan=2)
+
+
 # Print end text and unbind KeyPress.
 # ==> Add any post-game functionality here.
 def end_game():
     global game_data
-    update_text(text_game_over)
+    update_text(text_game_over + "\n\nPress Enter to return to settings")
+    bind_return(restart_game)
     # Print the details of each round to the terminal.
     # Can replace with writing to file.
     print(game_data)
@@ -561,15 +625,8 @@ def end_game():
 
     print(game_data.items())
     print(get_date)
-    print(game.get())
-
     # set file names
-    if game.get() == "First Game":
-        GAME = "game1"
-    elif game.get() == "Second Game":
-        GAME = "game2"
-    else:
-        GAME = "game1"
+    GAME = "game1"
 
     if condition.get() == "No Break":
         CONDITION = "control"
@@ -583,6 +640,7 @@ def end_game():
         CONDITION = "control"
 
 
+    os.makedirs(f"csv_output/{GAME}_{CONDITION}", exist_ok=True)
     with open(f"csv_output/{GAME}_{CONDITION}/{FILE_NAME}.csv", "w", newline='') as csvfile:
         datawriter = csv.writer(csvfile, delimiter=',')
         datawriter.writerow(col_names)
@@ -594,25 +652,155 @@ def end_game():
 # Run calls to set the script running
 ################################################################################
 begin = time.time()
-# datatype of menu text
+
 condition = StringVar()
-timeout = StringVar()
-game = StringVar()
-
-# initial menu text
 condition.set("No Break")
-timeout.set("No Timeout")
-game.set("First Game")
 
-# Create Dropdown menu
-condition_drop = OptionMenu(root, condition, *condition_options)
-game_drop = OptionMenu(root, game, *game_options)
-condition_drop.grid(row=0, column=0)
-game_drop.grid(row=0, column=2)
+num_rounds_var = tk.IntVar(value=NUM_ROUNDS)
+max_wait_var = tk.IntVar(value=MAX_WAIT)
+min_wait_var = tk.IntVar(value=MIN_WAIT)
 
-# Create button, it will change label text
-button = Button(root, text="Open Game", command=update_settings)
-button.grid(row=3, column=1)
+# ttk style for spinboxes
+_lf = (FONT_TYPE, 20)
+_wf = (FONT_TYPE, 20)
+
+style = ttk.Style()
+style.theme_use('clam')
+style.configure('Dark.TSpinbox',
+                fieldbackground='#222222', background='#333333',
+                foreground='white', arrowcolor='white',
+                bordercolor='#555555', darkcolor='#222222',
+                lightcolor='#222222', insertcolor='white')
+
+
+class DarkDropdown(tk.Frame):
+    """Custom dark-themed dropdown — replaces ttk.Combobox to avoid OS-native popup styling."""
+
+    def __init__(self, parent, variable, values, width=14):
+        super().__init__(parent, bg='#222222', cursor='hand2')
+        self._var = variable
+        self._values = values
+        self._width = width
+        self._popup = None
+        self._lb = None
+
+        self._label = tk.Label(self, textvariable=variable,
+                               fg='white', bg='#222222',
+                               font=_wf, width=width, anchor='w',
+                               padx=10, pady=6)
+        self._label.pack(side='left', fill='both', expand=True)
+
+        self._arrow = tk.Label(self, text='▾', fg='white', bg='#3a3a3a',
+                               font=(FONT_TYPE, 16), padx=8, pady=6)
+        self._arrow.pack(side='right')
+
+        for w in (self, self._label, self._arrow):
+            w.bind('<Button-1>', self._toggle)
+
+    def _toggle(self, *_):
+        if self._popup and self._popup.winfo_exists():
+            self._close()
+        else:
+            self._open()
+
+    def _open(self):
+        self.update_idletasks()
+        # Coordinates relative to root so the Frame sits inside root's canvas
+        x = self.winfo_rootx() - root.winfo_rootx()
+        y = self.winfo_rooty() - root.winfo_rooty() + self.winfo_height()
+        w = self.winfo_width()
+        row_h = self.winfo_height()
+        h = len(self._values) * row_h
+
+        # Plain tk.Frame on root — no OS window, so no rounded corners
+        self._popup = tk.Frame(root, bg='#222222',
+                               highlightthickness=1,
+                               highlightbackground='#555555')
+        self._popup.place(x=x, y=y, width=w, height=h)
+        self._popup.lift()
+
+        self._lb = tk.Listbox(
+            self._popup,
+            fg='white', bg='#222222',
+            selectbackground='#555555', selectforeground='white',
+            font=_wf, bd=0, highlightthickness=0,
+            activestyle='none', relief='flat'
+        )
+        self._lb.pack(fill='both', expand=True)
+
+        for v in self._values:
+            self._lb.insert('end', '  ' + v)
+
+        try:
+            idx = self._values.index(self._var.get())
+            self._lb.selection_set(idx)
+        except ValueError:
+            pass
+
+        self._lb.bind('<ButtonRelease-1>', self._select)
+        self._lb.bind('<FocusOut>', lambda _: self._close())
+        self._lb.focus_set()
+
+    def _select(self, *_):
+        idx = self._lb.curselection()
+        if idx:
+            self._var.set(self._values[idx[0]])
+        self._close()
+
+    def _close(self):
+        if self._popup and self._popup.winfo_exists():
+            self._popup.place_forget()
+            self._popup.destroy()
+        self._popup = None
+
+# Settings panel
+settings_frame = tk.Frame(root, bg=BG_COLOUR)
+settings_frame.grid(row=1, column=1, rowspan=2)
+
+tk.Label(
+    settings_frame, text="Experiment Settings",
+    fg=FONT_COLOUR, bg=BG_COLOUR,
+    font=(FONT_TYPE, 36, "bold")
+).grid(row=0, column=0, columnspan=2, pady=(0, 30))
+
+def _row(label, widget, r):
+    tk.Label(settings_frame, text=label, fg=FONT_COLOUR, bg=BG_COLOUR,
+             font=_lf, anchor="e").grid(row=r, column=0, sticky="e",
+                                        padx=(0, 16), pady=8)
+    widget.grid(row=r, column=1, sticky="w", pady=8)
+
+condition_drop = DarkDropdown(settings_frame, condition, condition_options, width=14)
+_row("Break Condition:", condition_drop, 1)
+
+
+num_rounds_spin = ttk.Spinbox(settings_frame, from_=1, to=100,
+                               textvariable=num_rounds_var,
+                               style='Dark.TSpinbox', font=_wf, width=6)
+_row("Number of Rounds:", num_rounds_spin, 3)
+
+max_wait_spin = ttk.Spinbox(settings_frame, from_=0, to=60,
+                             textvariable=max_wait_var,
+                             style='Dark.TSpinbox', font=_wf, width=6)
+_row("Max Wait (s):", max_wait_spin, 4)
+
+min_wait_spin = ttk.Spinbox(settings_frame, from_=0, to=60,
+                             textvariable=min_wait_var,
+                             style='Dark.TSpinbox', font=_wf, width=6)
+_row("Min Wait (s):", min_wait_spin, 5)
+
+timeout_var = tk.IntVar(value=RESPONSE_TIMEOUT)
+timeout_spin = ttk.Spinbox(settings_frame, from_=1, to=30,
+                            textvariable=timeout_var,
+                            style='Dark.TSpinbox', font=_wf, width=6)
+_row("Response Timeout (s):", timeout_spin, 6)
+
+# tk.Label used as button — reliably respects bg/fg on all platforms
+button = tk.Label(settings_frame, text="Start Game",
+                  fg='white', bg='#c95000',
+                  font=(FONT_TYPE, 24, "bold"),
+                  padx=30, pady=12, cursor="hand2")
+button.bind("<Button-1>", lambda _: update_settings())
+button.grid(row=7, column=0, columnspan=2, pady=(30, 0))
 
 
 root.mainloop()
