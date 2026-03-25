@@ -14,7 +14,13 @@ import threading
 ### Experiment Configuration ###################################################
 # Customise variables and text messages here, for ease of use.
 ################################################################################
-# Number of rounds to play
+# Number of games to play
+NUM_GAMES = 3
+
+# Default break condition for each game (must match condition_options values)
+DEFAULT_GAME_CONDITIONS = ["No Break", "5 Seconds", "10 Seconds"]
+
+# Number of rounds per game
 # NUM_ROUNDS = 30
 NUM_ROUNDS = 4
 
@@ -89,7 +95,8 @@ text_win_wait = "{} wins!\n\n{}, take {} seconds and decide\n\nwhat blast level 
 
 text_valid = "That is an invalid response.\nPlease select a blast level between 1-8.\n\n{}, standby for blast level:"
 
-text_game_over = "Game Over\nThanks for playing!"
+text_game_complete = "Game {} complete!\n\nPress Space to begin Game {}"
+text_game_over = "All games complete!\nThanks for playing!"
 
 
 get_date = datetime.today().strftime('%Y%m%d')
@@ -152,6 +159,8 @@ FORCED_BREAK_TIME = 0
 TIMEOUT_COUNTER = 0
 _timeout_id = None
 first_presser = None
+current_game_index = 0
+game_condition_vars = []
 
 display_text = tk.StringVar()
 display_label = tk.Label(
@@ -260,28 +269,17 @@ condition_options = [
 # These control the flow of the experiment
 ################################################################################
 def update_settings():
-    global FORCED_BREAK_TIME, NUM_ROUNDS, MAX_WAIT, MIN_WAIT, RESPONSE_TIMEOUT
+    global NUM_GAMES, NUM_ROUNDS, MAX_WAIT, MIN_WAIT, RESPONSE_TIMEOUT, current_game_index
     settings_frame.grid_forget()
     display_label.grid(row=1, column=1)
     entry_label.grid(row=2, column=1)
 
+    NUM_GAMES = num_games_var.get()
     NUM_ROUNDS = num_rounds_var.get()
     MAX_WAIT = max_wait_var.get()
     MIN_WAIT = min_wait_var.get()
     RESPONSE_TIMEOUT = timeout_var.get()
-
-    print("Condition: {}".format(condition.get()))
-
-    if condition.get() == "No Break":
-        FORCED_BREAK_TIME = 0
-    elif condition.get() == "5 Seconds":
-        FORCED_BREAK_TIME = 5
-    elif condition.get() == "10 Seconds":
-        FORCED_BREAK_TIME = 10
-    elif condition.get() == "15 Seconds":
-        FORCED_BREAK_TIME = 15
-    else:
-        FORCED_BREAK_TIME = 0
+    current_game_index = 0
 
     start_game()
 
@@ -318,16 +316,32 @@ def set_player_2(e):
     disable_typing()
     player_names[2] = entry_label.get()
     clear_entry()
-    initiate_game()
+    start_next_game()
 
 
-def initiate_game():
-    update_text(
-        "\n\n",
-        text_instructions,
-        "\n\n",
-        text_space_continue
-    )
+def start_next_game(e=None):
+    global FORCED_BREAK_TIME, game_round, game_data, save_files, current_game_index
+
+    game_round = 0
+    game_data = {}
+    save_files = []
+
+    condition_str = game_condition_vars[current_game_index].get()
+    if condition_str == "No Break":
+        FORCED_BREAK_TIME = 0
+    elif condition_str == "5 Seconds":
+        FORCED_BREAK_TIME = 5
+    elif condition_str == "10 Seconds":
+        FORCED_BREAK_TIME = 10
+    elif condition_str == "15 Seconds":
+        FORCED_BREAK_TIME = 15
+    else:
+        FORCED_BREAK_TIME = 0
+
+    if current_game_index == 0:
+        update_text("\n\n", text_instructions, "\n\n", text_space_continue)
+    else:
+        update_text(f"Game {current_game_index + 1} of {NUM_GAMES}\n\n", text_space_continue)
     bind_space(check_game)
 
 
@@ -355,13 +369,13 @@ def start_round(e):
     global time_to_round_start
     # Unbind <KeyPress> so that pressing a key won't do anything
     unbind_all()
-    update_text(text_get_ready)
+    update_text(text_round.format(game_round), "\n\n", text_get_ready)
     end_ttrs = time.time()
     time_to_round_start = end_ttrs - begin
     print("ttsr", time_to_round_start)
 
     # Print "Get Set..." after 1 second (1000ms)
-    root.after(1000, update_text, text_get_set)
+    root.after(1000, lambda: update_text(text_round.format(game_round), "\n\n", text_get_set))
 
     # Call the 'start_timer' function after a randomised delay (in Milliseconds)
     random_delay = 1000 + random.randint(MIN_WAIT, MAX_WAIT) * 1000
@@ -435,6 +449,10 @@ def time_check_fb(b):
     if b.keysym not in (KEY1, KEY2):
         return
 
+    first_presser_key = KEY1 if first_presser == 1 else KEY2
+    if b.keysym == first_presser_key:
+        return
+
     if _timeout_id is not None:
         root.after_cancel(_timeout_id)
         _timeout_id = None
@@ -484,6 +502,10 @@ def time_check(b):
     global KEY1, KEY2, game_data, game_round, win_num, _timeout_id
 
     if b.keysym not in (KEY1, KEY2):
+        return
+
+    first_presser_key = KEY1 if first_presser == 1 else KEY2
+    if b.keysym == first_presser_key:
         return
 
     if _timeout_id is not None:
@@ -601,44 +623,28 @@ def activate_blast(blast_level):
 
 
 def restart_game(*_):
-    global game_round, game_data, save_files, player_names
+    global game_round, game_data, save_files, player_names, current_game_index
     game_round = 0
     game_data = {}
     save_files = []
     player_names = {}
+    current_game_index = 0
     unbind_all()
     display_label.grid_remove()
     entry_label.grid_remove()
     settings_frame.grid(row=1, column=1, rowspan=2)
 
 
-# Print end text and unbind KeyPress.
-# ==> Add any post-game functionality here.
-def end_game():
-    global game_data
-    update_text(text_game_over + "\n\nPress Enter to return to settings")
-    bind_return(restart_game)
-    # Print the details of each round to the terminal.
-    # Can replace with writing to file.
+def _save_game_csv():
+    game_number = current_game_index + 1
+    fb_map = {0: "control", 5: "fb5", 10: "fb10", 15: "fb15"}
+    CONDITION = fb_map.get(FORCED_BREAK_TIME, "control")
+    GAME = f"game{game_number}"
+
     print(game_data)
     print("----------")
-
     print(game_data.items())
     print(get_date)
-    # set file names
-    GAME = "game1"
-
-    if condition.get() == "No Break":
-        CONDITION = "control"
-    elif condition.get() == "5 Seconds":
-        CONDITION = "fb5"
-    elif condition.get() == "10 Seconds":
-        CONDITION = "fb10"
-    elif condition.get() == "15 Seconds":
-        CONDITION = "fb15"
-    else:
-        CONDITION = "control"
-
 
     os.makedirs(f"csv_output/{GAME}_{CONDITION}", exist_ok=True)
     with open(f"csv_output/{GAME}_{CONDITION}/{FILE_NAME}.csv", "w", newline='') as csvfile:
@@ -648,14 +654,27 @@ def end_game():
             datawriter.writerow(row)
 
 
+# Print end text and unbind KeyPress.
+# ==> Add any post-game functionality here.
+def end_game():
+    global current_game_index
+    _save_game_csv()
+    current_game_index += 1
+
+    if current_game_index < NUM_GAMES:
+        update_text(text_game_complete.format(current_game_index, current_game_index + 1))
+        bind_space(start_next_game)
+    else:
+        update_text(text_game_over + "\n\nPress Enter to return to settings")
+        bind_return(restart_game)
+
+
 ### Start Program ##############################################################
 # Run calls to set the script running
 ################################################################################
 begin = time.time()
 
-condition = StringVar()
-condition.set("No Break")
-
+num_games_var = tk.IntVar(value=NUM_GAMES)
 num_rounds_var = tk.IntVar(value=NUM_ROUNDS)
 max_wait_var = tk.IntVar(value=MAX_WAIT)
 min_wait_var = tk.IntVar(value=MIN_WAIT)
@@ -769,14 +788,42 @@ def _row(label, widget, r):
                                         padx=(0, 16), pady=8)
     widget.grid(row=r, column=1, sticky="w", pady=8)
 
-condition_drop = DarkDropdown(settings_frame, condition, condition_options, width=14)
-_row("Break Condition:", condition_drop, 1)
+num_games_spin = ttk.Spinbox(settings_frame, from_=1, to=10,
+                              textvariable=num_games_var,
+                              style='Dark.TSpinbox', font=_wf, width=6)
+_row("Number of Games:", num_games_spin, 1)
 
+game_rows_frame = tk.Frame(settings_frame, bg=BG_COLOUR)
+game_rows_frame.grid(row=2, column=0, columnspan=2, pady=4)
+
+
+def build_game_rows():
+    global game_condition_vars
+    # focus root first to close any open dropdown popup
+    root.focus_set()
+    for w in game_rows_frame.winfo_children():
+        w.destroy()
+    game_condition_vars = []
+    n = num_games_var.get()
+    for i in range(n):
+        default = DEFAULT_GAME_CONDITIONS[i] if i < len(DEFAULT_GAME_CONDITIONS) else "No Break"
+        var = tk.StringVar(value=default)
+        game_condition_vars.append(var)
+        tk.Label(game_rows_frame, text=f"Game {i + 1} Break:",
+                 fg=FONT_COLOUR, bg=BG_COLOUR,
+                 font=_lf, anchor="e"
+                 ).grid(row=i, column=0, sticky="e", padx=(0, 16), pady=6)
+        DarkDropdown(game_rows_frame, var, condition_options, width=14).grid(
+            row=i, column=1, sticky="w", pady=6)
+
+
+num_games_var.trace_add("write", lambda *_: build_game_rows())
+build_game_rows()
 
 num_rounds_spin = ttk.Spinbox(settings_frame, from_=1, to=100,
                                textvariable=num_rounds_var,
                                style='Dark.TSpinbox', font=_wf, width=6)
-_row("Number of Rounds:", num_rounds_spin, 3)
+_row("Rounds per Game:", num_rounds_spin, 3)
 
 max_wait_spin = ttk.Spinbox(settings_frame, from_=0, to=60,
                              textvariable=max_wait_var,
