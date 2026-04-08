@@ -21,19 +21,18 @@ NUM_GAMES = 3
 DEFAULT_GAME_CONDITIONS = ["No Break", "5 Seconds", "10 Seconds"]
 
 # Number of rounds per game
-# NUM_ROUNDS = 30
-NUM_ROUNDS = 4
+# NUM_ROUNDS = 10
+NUM_ROUNDS = 4 # 4 for testing
 
 # Maximum number of seconds to wait during game (s)
 # MAX_WAIT = 8
 MAX_WAIT = 8
 
 # Minimum number of seconds to wait during game (s)
-MIN_WAIT = 0
-MIN_WAIT = 0
+MIN_WAIT = 1
 
 # Set time difference to override random win (ms)
-ELAPSED_TIME = 100
+ELAPSED_TIME = 20
 
 # Set the timeout for second player response (s)
 RESPONSE_TIMEOUT = 3
@@ -47,7 +46,7 @@ WINDOW_WIDTH = 1920
 WINDOW_HEIGHT = 1080
 
 # Set font details
-FONT_TYPE = "Helvetica"
+FONT_TYPE = "Agency FB"
 FONT_SIZE = 50
 FONT_COLOUR = "white"
 GO_COLOUR = "orange"
@@ -58,9 +57,10 @@ blast_file = AudioSegment.from_mp3(
     "radio_static.mp3"
 )
 
-FILE_NAME = datetime.today().strftime('%Y%m%d%H')
+FILE_NAME = ""
 save_files = []
-col_names = ["win_num", "sound", "ttrs", "ttbp", "ttbi"]
+all_save_files = []
+col_names = ["game", "player1", "player2", "win_num", "sound", "ttrs", "ttbp", "ttbi"]
 
 default_blast_id = ""
 
@@ -87,13 +87,13 @@ text_get_set = "Set..."
 text_go = "GO!!"
 
 text_win = "{} Wins!" \
-           "\n\n{}, select a blast level from 1-8" \
+           "\n\n{}, select a blast level from 1-9" \
            "\n\n{}, standby 😈"
 text_blast = "Standby for blast..."
 
 text_win_wait = "{} wins!\n\n{}, take {} seconds and decide\n\nwhat blast level you want to set for {}"
 
-text_valid = "That is an invalid response.\nPlease select a blast level between 1-8.\n\n{}, standby for blast level:"
+text_valid = "That is an invalid response.\nPlease select a blast level between 1-9.\n\n{}, standby for blast level:"
 
 text_game_complete = "Game {} complete!\n\nPress Space to begin Game {}"
 text_game_over = "All games complete!\nThanks for playing!"
@@ -106,13 +106,14 @@ get_date = datetime.today().strftime('%Y%m%d')
 # set my computer to full volume
 
 blast_file_1 = blast_file - 38
-blast_file_2 = blast_file - 33
-blast_file_3 = blast_file - 29
-blast_file_4 = blast_file - 23
-blast_file_5 = blast_file - 18
-blast_file_6 = blast_file - 15
-blast_file_7 = blast_file + 1
-blast_file_8 = blast_file + 20
+blast_file_2 = blast_file - 31
+blast_file_3 = blast_file - 24
+blast_file_4 = blast_file - 16
+blast_file_5 = blast_file - 9
+blast_file_6 = blast_file - 2
+blast_file_7 = blast_file + 6
+blast_file_8 = blast_file + 13
+blast_file_9 = blast_file + 20
 
 blast_file_l1 = blast_file_1.pan(-1)
 blast_file_l2 = blast_file_2.pan(-1)
@@ -122,6 +123,7 @@ blast_file_l5 = blast_file_5.pan(-1)
 blast_file_l6 = blast_file_6.pan(-1)
 blast_file_l7 = blast_file_7.pan(-1)
 blast_file_l8 = blast_file_8.pan(-1)
+blast_file_l9 = blast_file_9.pan(-1)
 
 blast_file_r1 = blast_file_1.pan(1)
 blast_file_r2 = blast_file_2.pan(1)
@@ -131,6 +133,7 @@ blast_file_r5 = blast_file_5.pan(1)
 blast_file_r6 = blast_file_6.pan(1)
 blast_file_r7 = blast_file_7.pan(1)
 blast_file_r8 = blast_file_8.pan(1)
+blast_file_r9 = blast_file_9.pan(1)
 
 blast_file_1.split_to_mono()
 
@@ -152,6 +155,7 @@ player_names = {}
 win_num = None
 game_round = 0
 game_data = {}
+game_break_times = {}
 time_to_round_start = 0
 time_to_button_press = 0
 time_to_blast_initiate = 0
@@ -191,6 +195,8 @@ root.grid_rowconfigure(0, weight=1)
 root.grid_rowconfigure(3, weight=1)
 root.grid_columnconfigure(0, weight=1)
 root.grid_columnconfigure(2, weight=1)
+
+summary_frame = tk.Frame(root, bg=BG_COLOUR)
 
 
 ### Text Functions  ############################################################
@@ -239,13 +245,15 @@ def unbind_all():
 
 
 def allow_typing():
+    entry_label.grid(row=2, column=1)
     entry_label.configure(state="normal")
-    entry_label.focus_set()
+    entry_label.focus_force()
 
 
 def disable_typing():
     entry_label.configure(state="disabled")
-    root.focus_set()
+    entry_label.grid_remove()
+    root.focus_force()
 
 
 def clear_entry():
@@ -271,6 +279,7 @@ condition_options = [
 def update_settings():
     global NUM_GAMES, NUM_ROUNDS, MAX_WAIT, MIN_WAIT, RESPONSE_TIMEOUT, current_game_index
     settings_frame.grid_forget()
+    root.focus_set()
     display_label.grid(row=1, column=1)
     entry_label.grid(row=2, column=1)
 
@@ -312,15 +321,19 @@ def ask_player_2():
 
 
 def set_player_2(e):
-    global player_names
+    global player_names, FILE_NAME
     disable_typing()
     player_names[2] = entry_label.get()
     clear_entry()
+    p1 = player_names[1].replace(" ", "_")
+    p2 = player_names[2].replace(" ", "_")
+    timestamp = datetime.today().strftime('%Y%m%d%H%M%S')
+    FILE_NAME = f"{p1}_{p2}_{timestamp}"
     start_next_game()
 
 
 def start_next_game(e=None):
-    global FORCED_BREAK_TIME, game_round, game_data, save_files, current_game_index
+    global FORCED_BREAK_TIME, game_round, game_data, save_files, current_game_index, game_break_times
 
     game_round = 0
     game_data = {}
@@ -338,10 +351,12 @@ def start_next_game(e=None):
     else:
         FORCED_BREAK_TIME = 0
 
+    game_break_times[current_game_index + 1] = FORCED_BREAK_TIME
+
     if current_game_index == 0:
-        update_text("\n\n", text_instructions, "\n\n", text_space_continue)
+        update_text(f"Game 1 of {NUM_GAMES}\n\n", text_instructions, "\n\n", text_space_continue)
     else:
-        update_text(f"Game {current_game_index + 1} of {NUM_GAMES}\n\n", text_space_continue)
+        update_text(f"Game {current_game_index} complete!\n\nGame {current_game_index + 1} of {NUM_GAMES}\n\n{text_space_continue}")
     bind_space(check_game)
 
 
@@ -353,10 +368,8 @@ def check_game(e=None):
         end_game()
 
     else:
-        update_text(text_round.format(game_round),
-                    "\n\n",
-                    text_get_ready
-                    )
+        round_header = f"Game {current_game_index + 1} of {NUM_GAMES}  |  Round {game_round} of {NUM_ROUNDS}"
+        update_text(round_header, "\n\n", text_get_ready)
         bind_space(get_ready(e))
 
 
@@ -369,13 +382,14 @@ def start_round(e):
     global time_to_round_start
     # Unbind <KeyPress> so that pressing a key won't do anything
     unbind_all()
-    update_text(text_round.format(game_round), "\n\n", text_get_ready)
+    round_header = f"Game {current_game_index + 1} of {NUM_GAMES}  |  Round {game_round} of {NUM_ROUNDS}"
+    update_text(round_header, "\n\n", text_get_ready)
     end_ttrs = time.time()
     time_to_round_start = end_ttrs - begin
     print("ttsr", time_to_round_start)
 
     # Print "Get Set..." after 1 second (1000ms)
-    root.after(1000, lambda: update_text(text_round.format(game_round), "\n\n", text_get_set))
+    root.after(1000, lambda: update_text(round_header, "\n\n", text_get_set))
 
     # Call the 'start_timer' function after a randomised delay (in Milliseconds)
     random_delay = 1000 + random.randint(MIN_WAIT, MAX_WAIT) * 1000
@@ -565,7 +579,7 @@ def ask_blast():
 def validate_blast(self):
     global win_num
 
-    if entry_label.get() in ["1", "2", "3", "4", "5", "6", "7", "8"]:
+    if entry_label.get() in ["1", "2", "3", "4", "5", "6", "7", "8", "9"]:
         set_blast()
     else:
         update_text(text_valid.format(player_names[3 - win_num]))
@@ -591,11 +605,13 @@ def activate_blast(blast_level):
 
     blast_files_l = {
         "1": blast_file_l1, "2": blast_file_l2, "3": blast_file_l3, "4": blast_file_l4,
-        "5": blast_file_l5, "6": blast_file_l6, "7": blast_file_l7, "8": blast_file_l8
+        "5": blast_file_l5, "6": blast_file_l6, "7": blast_file_l7, "8": blast_file_l8,
+        "9": blast_file_l9
     }
     blast_files_r = {
         "1": blast_file_r1, "2": blast_file_r2, "3": blast_file_r3, "4": blast_file_r4,
-        "5": blast_file_r5, "6": blast_file_r6, "7": blast_file_r7, "8": blast_file_r8
+        "5": blast_file_r5, "6": blast_file_r6, "7": blast_file_r7, "8": blast_file_r8,
+        "9": blast_file_r9
     }
 
     if win_num == 1:
@@ -603,7 +619,8 @@ def activate_blast(blast_level):
     else:
         audio = blast_files_r.get(blast_level, blast_file_r4)
 
-    save_files.append([win_num, blast_level, time_to_round_start, time_to_button_press, time_to_blast_initiate])
+    game_number = current_game_index + 1
+    save_files.append([game_number, player_names[1], player_names[2], win_num, blast_level, time_to_round_start, time_to_button_press, time_to_blast_initiate])
 
     game_data[game_round] = {
         "a": win_num,
@@ -623,35 +640,87 @@ def activate_blast(blast_level):
 
 
 def restart_game(*_):
-    global game_round, game_data, save_files, player_names, current_game_index
+    global game_round, game_data, game_break_times, save_files, all_save_files, player_names, current_game_index
     game_round = 0
     game_data = {}
+    game_break_times = {}
     save_files = []
+    all_save_files = []
     player_names = {}
     current_game_index = 0
     unbind_all()
     display_label.grid_remove()
     entry_label.grid_remove()
+    summary_frame.grid_remove()
     settings_frame.grid(row=1, column=1, rowspan=2)
+    bind_space(update_settings)
 
 
 def _save_game_csv():
-    game_number = current_game_index + 1
-    fb_map = {0: "control", 5: "fb5", 10: "fb10", 15: "fb15"}
-    CONDITION = fb_map.get(FORCED_BREAK_TIME, "control")
-    GAME = f"game{game_number}"
+    global all_save_files
+    all_save_files.extend(save_files)
 
-    print(game_data)
-    print("----------")
-    print(game_data.items())
-    print(get_date)
-
-    os.makedirs(f"csv_output/{GAME}_{CONDITION}", exist_ok=True)
-    with open(f"csv_output/{GAME}_{CONDITION}/{FILE_NAME}.csv", "w", newline='') as csvfile:
+    os.makedirs("csv_output", exist_ok=True)
+    with open(f"csv_output/{FILE_NAME}.csv", "w", newline='') as csvfile:
         datawriter = csv.writer(csvfile, delimiter=',')
         datawriter.writerow(col_names)
-        for row in save_files:
+        for row in all_save_files:
             datawriter.writerow(row)
+
+
+def _show_summary_table():
+    for w in summary_frame.winfo_children():
+        w.destroy()
+
+    tf = (FONT_TYPE, 30)
+    tf_bold = (FONT_TYPE, 30, "bold")
+    pad = {"padx": 24, "pady": 10}
+
+    def pause_label(secs):
+        return "No pause" if secs == 0 else f"{secs}s pause"
+
+    # Title
+    tk.Label(summary_frame, text=text_game_over,
+             fg=FONT_COLOUR, bg=BG_COLOUR,
+             font=(FONT_TYPE, 40, "bold")).grid(
+        row=0, column=0, columnspan=len(game_break_times) + 1, pady=(0, 30))
+
+    games = sorted(game_break_times.keys())
+
+    # Column headers
+    tk.Label(summary_frame, text="", bg=BG_COLOUR).grid(row=1, column=0)
+    for col_i, g in enumerate(games, start=1):
+        tk.Label(summary_frame,
+                 text=f"Game {g}\n{pause_label(game_break_times[g])}",
+                 fg=FONT_COLOUR, bg=BG_COLOUR,
+                 font=tf_bold, justify="center", **pad).grid(row=1, column=col_i)
+
+    # Player rows
+    for row_i, (player_num, name) in enumerate(
+            [(1, player_names[1]), (2, player_names[2])], start=2):
+        tk.Label(summary_frame, text=name,
+                 fg=FONT_COLOUR, bg=BG_COLOUR,
+                 font=tf_bold, anchor="e", **pad).grid(row=row_i, column=0, sticky="e")
+        for col_i, g in enumerate(games, start=1):
+            wins = sum(1 for r in all_save_files if r[0] == g and r[3] == player_num)
+            blasts = [int(r[4]) for r in all_save_files if r[0] == g and r[3] == player_num]
+            avg = f"{sum(blasts) / len(blasts):.1f}" if blasts else "N/A"
+            tk.Label(summary_frame,
+                     text=f"{wins} / {NUM_ROUNDS} wins\nAvg blast: {avg}",
+                     fg=FONT_COLOUR, bg=BG_COLOUR,
+                     font=tf, justify="center", **pad).grid(row=row_i, column=col_i)
+
+    # Footer
+    tk.Label(summary_frame,
+             text="Press Enter to return to settings",
+             fg=FONT_COLOUR, bg=BG_COLOUR,
+             font=(FONT_TYPE, 24)).grid(
+        row=4, column=0, columnspan=len(game_break_times) + 1, pady=(30, 0))
+
+    display_label.grid_remove()
+    entry_label.grid_remove()
+    summary_frame.grid(row=1, column=1, rowspan=2)
+    bind_return(restart_game)
 
 
 # Print end text and unbind KeyPress.
@@ -662,11 +731,9 @@ def end_game():
     current_game_index += 1
 
     if current_game_index < NUM_GAMES:
-        update_text(text_game_complete.format(current_game_index, current_game_index + 1))
-        bind_space(start_next_game)
+        start_next_game()
     else:
-        update_text(text_game_over + "\n\nPress Enter to return to settings")
-        bind_return(restart_game)
+        _show_summary_table()
 
 
 ### Start Program ##############################################################
@@ -839,15 +906,18 @@ timeout_var = tk.IntVar(value=RESPONSE_TIMEOUT)
 timeout_spin = ttk.Spinbox(settings_frame, from_=1, to=30,
                             textvariable=timeout_var,
                             style='Dark.TSpinbox', font=_wf, width=6)
-_row("Response Timeout (s):", timeout_spin, 6)
+_row("No Response Timeout (s):", timeout_spin, 6)
 
-# tk.Label used as button — reliably respects bg/fg on all platforms
-button = tk.Label(settings_frame, text="Start Game",
-                  fg='white', bg='#c95000',
-                  font=(FONT_TYPE, 24, "bold"),
-                  padx=30, pady=12, cursor="hand2")
-button.bind("<Button-1>", lambda _: update_settings())
-button.grid(row=7, column=0, columnspan=2, pady=(30, 0))
+tk.Label(settings_frame, text=text_space_continue,
+         fg=FONT_COLOUR, bg=BG_COLOUR,
+         font=(FONT_TYPE, 24)).grid(row=7, column=0, columnspan=2, pady=(30, 0))
 
+def _spin_space(e):
+    update_settings()
+    return "break"
 
+for _spin in [num_games_spin, num_rounds_spin, max_wait_spin, min_wait_spin, timeout_spin]:
+    _spin.bind("<space>", _spin_space)
+
+bind_space(update_settings)
 root.mainloop()

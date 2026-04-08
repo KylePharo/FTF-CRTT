@@ -1,2 +1,4 @@
 csv_output/
 .venv/
+.claude/
+*.TTF
